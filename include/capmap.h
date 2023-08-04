@@ -22,6 +22,30 @@
 
 namespace capmap {
 
+struct Roots {
+  void *__capability c[31];
+  void *__capability csp;
+  void *__capability ddc;
+  void *__capability pcc;
+  void *__capability cid_el0;
+  // TODO: Are there other EL0 registers that could hold a capability?
+
+  static char const *name_c(int i) {
+    char const *const names[] = {"c0",  "c1",  "c2",  "c3",  "c4",  "c5",  "c6",  "c7",
+                                 "c8",  "c9",  "c10", "c11", "c12", "c13", "c14", "c15",
+                                 "c16", "c17", "c18", "c19", "c20", "c21", "c22", "c23",
+                                 "c24", "c25", "c26", "c27", "c28", "c29", "c30"};
+    return names[i];
+  }
+};
+
+// Retrieve all register roots.
+//
+// This is "naked" to minimise disturbance to caller-saved registers, etc.
+// However, this process is not (and cannot be) perfect; capabilities left in
+// caller-saved registers may be missed.
+__attribute((naked)) Roots get_roots();
+
 // The primary container, and expected API entry point.
 class Mapper {
  public:
@@ -52,6 +76,19 @@ class Mapper {
   // Capabilities to memory outside included ranges will still be reported, but
   // those ranges won't be examined.
   SparseRange *include() { return &include_; }
+
+  // Scan all of the specified roots.
+  //
+  // The result is incorporated into the existing map.
+  void scan(Roots const &roots) {
+    for (size_t i = 0; i < sizeof(roots.c) / sizeof(roots.c[0]); i++) {
+      scan(roots.c[i], Roots::name_c(i));
+    }
+    scan(roots.csp, "csp");
+    scan(roots.ddc, "DDC");
+    scan(roots.pcc, "PCC");
+    scan(roots.cid_el0, "CID_EL0");
+  }
 
   // Scan the specified capability.
   //

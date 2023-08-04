@@ -36,6 +36,51 @@
 
 namespace capmap {
 
+#ifdef __CHERI_PURE_CAPABILITY__
+#define R8 "c8"
+#else
+#define R8 "x8"
+#endif
+
+__attribute((naked)) Roots get_roots() {
+  // AAPCS64(-cap): The caller allocates space for the large returned struct,
+  // and passes a pointer in x8/c8.
+  // clang-format off
+  asm("1:\n"
+      "stp c0, c1, [" R8 "]\n"
+      "stp c2, c3, [" R8 ", #32]\n"
+      "stp c4, c5, [" R8 ", #64]\n"
+      "stp c6, c7, [" R8 ", #96]\n"
+      "stp c8, c9, [" R8 ", #128]\n"
+      "stp c10, c11, [" R8 ", #160]\n"
+      "stp c12, c13, [" R8 ", #192]\n"
+      "stp c14, c15, [" R8 ", #224]\n"
+      "stp c16, c17, [" R8 ", #256]\n"
+      "stp c18, c19, [" R8 ", #288]\n"
+      "stp c20, c21, [" R8 ", #320]\n"
+      "stp c22, c23, [" R8 ", #352]\n"
+      "stp c24, c25, [" R8 ", #384]\n"
+      "stp c26, c27, [" R8 ", #416]\n"
+      "stp c28, c29, [" R8 ", #448]\n"
+      "str c30, [" R8 ", #480]\n"
+
+      "mov c0, csp\n"
+      "mrs c1, ddc\n"
+      "stp c0, c1, [" R8 ", #496]\n"
+
+#ifdef __CHERI_PURE_CAPABILITY__
+      "adr c0, 1b\n"  // PCC on entry
+#else
+      "adr x0, 1b\n"  // PCC on entry
+      "cvtp c0, x0\n"
+#endif
+      "mrs c1, cid_el0\n"
+      "stp c0, c1, [" R8 ", #528]\n"
+
+      "ret\n");
+  // clang-format on
+}
+
 void print_raw_cap(FILE* stream, void* __capability cap) {
   uint64_t parts[2];
   static_assert(sizeof(parts) == sizeof(cap), "Expected 128-bit capability");

@@ -254,3 +254,15 @@ TEST(scan_loop) {
   // Depth 2: scan b, find &a, which is already mapped.
   TRY(mapper.max_seen_scan_depth() == 2);
 }
+
+TEST(scan_depth_zero) {
+  // If we limit the depth to zero, roots are never dereferenced, so we don't
+  // have to worry about the memory being mapped.
+  Mapper mapper{Range::full_64bit()};
+  mapper.set_max_scan_depth(0);
+  mapper.scan(capmap::get_roots());
+  if (options().verbose()) {
+    mapper.print_json(stdout);
+  }
+  TRY(mapper.max_seen_scan_depth() == 0);
+}
