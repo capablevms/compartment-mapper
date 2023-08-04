@@ -78,6 +78,21 @@ class LoadCapMap : public Map {
   SparseRange ranges_;
 };
 
+// Memory ranges from which data can be loaded.
+class LoadMap : public Map {
+ public:
+  virtual char const *name() const override { return "load"; }
+  virtual char const *address_space() const override { return "virtual memory"; }
+  virtual std::set<Range> const &ranges() const override { return ranges_.parts(); }
+  virtual bool try_combine(void *__capability cap) override;
+  virtual ~LoadMap() {}
+
+  SparseRange const &sparse_range() const { return ranges_; }
+
+ private:
+  SparseRange ranges_;
+};
+
 // TODO: Provide other `Map` derivatives.
 
 }  // namespace capmap

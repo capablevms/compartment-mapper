@@ -82,6 +82,13 @@ class TestRun {
     printf("%s", suffix);
   }
 
+  // Get a capability with load, but not load-capability permissions, and make
+  // some effort to clean up temporaries, etc.
+  //
+  // This is not expected to be reliable enough for security purposes, but is
+  // good enough for tests.
+  __attribute((naked)) void *__capability map_load_only();
+
   bool printed_ = false;
   bool result_ = true;
 

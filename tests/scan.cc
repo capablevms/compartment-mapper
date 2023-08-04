@@ -255,6 +255,26 @@ TEST(scan_loop) {
   TRY(mapper.max_seen_scan_depth() == 2);
 }
 
+TEST(scan_load_vs_load_cap) {
+  // `LoadMap` should always be at least as big as `LoadCapMap`.
+  void* __capability load_only = map_load_only();
+  Mapper mapper;
+  mapper.maps()->push_back(std::make_unique<capmap::LoadMap>());
+  mapper.scan(capmap::get_roots());
+  // If the compiler optimises `load_only` away, it might not be reachable
+  // through roots.
+  mapper.scan(load_only, "load_only");
+
+  if (options().verbose()) {
+    mapper.print_json(stdout);
+  }
+  TRY(mapper.maps()->size() == 1);
+  auto load_map = dynamic_cast<capmap::LoadMap const*>(mapper.maps()->at(0).get());
+  capmap::LoadCapMap const& load_cap_map = mapper.load_cap_map();
+
+  TRY(load_map->sparse_range().includes(load_cap_map.sparse_range()));
+}
+
 TEST(scan_depth_zero) {
   // If we limit the depth to zero, roots are never dereferenced, so we don't
   // have to worry about the memory being mapped.

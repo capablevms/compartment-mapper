@@ -221,4 +221,15 @@ SparseRange LoadCapMap::vmmap() {
   return map;
 }
 
+bool LoadMap::try_combine(void* __capability cap) {
+  if (!cheri_tag_get(cap)) return false;
+  if (cheri_is_sealed(cap)) return false;
+
+  if (cheri_perms_get(cap) & CHERI_PERM_LOAD) {
+    ranges_.combine(Range::from_cap(cap));
+    return true;
+  }
+  return false;
+}
+
 }  // namespace capmap
