@@ -2,3 +2,5 @@ obj
 *.so
 test-morello-hybrid
 test-morello-purecap
+example-*-morello-hybrid
+example-*-morello-purecap

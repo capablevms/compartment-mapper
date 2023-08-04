@@ -46,6 +46,17 @@ struct Roots {
 // caller-saved registers may be missed.
 __attribute((naked)) Roots get_roots();
 
+// Shorthand for creating a new Mapper, scanning all roots from `get_roots()`,
+// then calling `print_json()`.
+//
+// This is useful for simple applications and quick tests, but it only scans for
+// the default permissions (notably "load capability") and doesn't allow any
+// customisation.
+//
+// Note that argument passing and other compiler behaviours may hide
+// capabilities left in caller-saved registers.
+void simple_scan_and_print_json(FILE *stream);
+
 // The primary container, and expected API entry point.
 class Mapper {
  public:

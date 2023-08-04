@@ -16,12 +16,18 @@ fi
 
 make -j10
 ssh -q "$SSHHOST" mkdir -p "$REMOTEDIR"
-scp -q *.so test-* "$SSHHOST":"$REMOTEDIR/"
+scp -q *.so test-* example-*-morello-* "$SSHHOST":"$REMOTEDIR/"
 if [ -z "${NORUN+norun}" ]; then
   ssh "$SSHHOST" "set -eu;
                   cd $REMOTEDIR;
                   ./test-morello-purecap;
-                  ./test-morello-hybrid;"
+                  ./test-morello-hybrid;
+                  echo -n \"Running example-default-morello-purecap... \";
+                  ./example-default-morello-purecap > /dev/null;
+                  echo \"Ok\";
+                  echo -n \"Running example-default-morello-hybrid... \";
+                  ./example-default-morello-hybrid > /dev/null;
+                  echo \"Ok\";"
 else
   echo "Skipping test run because NORUN is set."
 fi

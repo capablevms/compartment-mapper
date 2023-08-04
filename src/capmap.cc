@@ -88,6 +88,13 @@ void print_raw_cap(FILE* stream, void* __capability cap) {
   fprintf(stream, "0x%u:%" PRIx64 ":%" PRIx64, cheri_tag_get(cap), parts[1], parts[0]);
 }
 
+void simple_scan_and_print_json(FILE* stream) {
+  Roots roots = get_roots();
+  Mapper mapper;
+  mapper.scan(roots);
+  mapper.print_json(stream);
+}
+
 void Mapper::update_self_ranges() {
   // TODO: Do a better job here.
   //  - We have several heap objects, which should also be excluded.
