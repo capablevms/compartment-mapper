@@ -41,7 +41,7 @@ Non-trivial capability graphs can be time-consuming to traverse, and can require
 a lot of memory (or disk space) to represent. For that reason, data gathering is
 configurable, so that you can gather only what you need to gather.
 
-### Included or exlucded memory
+### Included or excluded memory
 
 By default, memory is scanned as long as it is reachable from at least one
 capability (directly or indirectly), and as long as it is mapped at the page
@@ -105,7 +105,7 @@ application-specific address spaces), mapping classes are required to specify
 (as a string) the name of the address space that they use. This string is not
 interpreted at all, but can be used to display the results effectively.
 
-## Sealed capabilties
+## Sealed capabilities
 
 _TODO: Currently, sealed capabilities are just ignored. It is possible to write
 mappers that find them, but there is no mechanism for using unsealing
