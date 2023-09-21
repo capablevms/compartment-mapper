@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: Copyright 2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-FileCopyrightText: Copyright 2023 The University of Glasgow
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 #ifndef CAPMAP_MAPPERS_H_
@@ -93,7 +94,64 @@ class LoadMap : public Map {
   SparseRange ranges_;
 };
 
-// TODO: Provide other `Map` derivatives.
+// Ranges with given permissions
+class PermissionMap : public Map {
+ public:
+  PermissionMap(const char *name, const char *addrsp, cheri_perms_t perms)
+      : name_(name), addrsp_(addrsp), perms_(perms) {}
+  virtual char const *name() const override { return name_; }
+  virtual char const *address_space() const override { return addrsp_; }
+  virtual std::set<Range> const &ranges() const override { return ranges_.parts(); }
+  virtual bool try_combine(void *__capability cap) override;
+  virtual ~PermissionMap() {}
+
+ private:
+  SparseRange ranges_;
+  const char *const name_;
+  const char *const addrsp_;
+  const cheri_perms_t perms_;
+};
+
+// Finds memory ranges which are available branch targets:
+//  - `BranchMap` tracks only addresses which can be branched to directly; it does not track
+//     possible PCC bounds after a branch
+//  - Alignment requirements are not explicitly tracked. Depending on the low bits (addr&3), an
+//    address could be an A64 branch target (0), a C64 branch target (1), or an address that
+//    is not properly aligned for instruction fetch (2 or 3).
+class BranchMap : public Map {
+ public:
+  virtual char const *name() const override { return "branch"; }
+  virtual char const *address_space() const override { return "virtual memory"; }
+  virtual std::set<Range> const &ranges() const override { return ranges_.parts(); }
+  virtual bool try_combine(void *__capability cap) override;
+  virtual ~BranchMap() {}
+
+ private:
+  SparseRange ranges_;
+};
+
+typedef bool (*poison_callback_t)(void *__capability cap);
+
+// Flags any unwanted entry into a given region
+class PoisonMap : public Map {
+ public:
+  PoisonMap(const char *name, const char *addrsp, cheri_perms_t perms, SparseRange poison,
+            poison_callback_t callback)
+      : name_(name), addrsp_(addrsp), perms_(perms), poison_(poison), callback_(callback) {}
+  virtual char const *name() const override { return name_; }
+  virtual char const *address_space() const override { return addrsp_; }
+  virtual std::set<Range> const &ranges() const override { return ranges_.parts(); }
+  virtual bool try_combine(void *__capability cap) override;
+  virtual ~PoisonMap() {}
+
+ private:
+  SparseRange ranges_;
+  const char *const name_;
+  const char *const addrsp_;
+  const cheri_perms_t perms_;
+  SparseRange poison_;
+  poison_callback_t callback_;
+};
 
 }  // namespace capmap
 #endif
