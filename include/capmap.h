@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: Copyright 2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-FileCopyrightText: Copyright 2023 The University of Glasgow
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 #ifndef CAPMAP_H_
@@ -108,7 +109,12 @@ class Mapper {
     update_self_ranges();
     if (cheri_tag_get(cap)) {
       roots_.push_back(std::make_pair(name, cap));
-      scan(cap);
+      try {
+        scan(cap);
+      } catch (int n) {
+        fprintf(stderr, " from root %s at depth %d\n", name, n);
+        abort();
+      }
     }
   }
 

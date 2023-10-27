@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: Copyright 2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-FileCopyrightText: Copyright 2023 The University of Glasgow
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 #include "include/capmap.h"
@@ -118,6 +119,7 @@ void Mapper::scan(void* __capability cap, uint64_t depth) {
   auto scan_ranges = SparseRange(cap_range);
   scan_ranges.remove(load_cap_map_.ranges());
   scan_ranges.remove(exclude_self_);
+
   // TODO: Make a SparseRange::filter() function or similar, to avoid repeating
   // this for every scan.
   auto exclude = SparseRange(Range::full_64bit());
@@ -135,7 +137,12 @@ void Mapper::scan(void* __capability cap, uint64_t depth) {
             : [addr] "r"(cheri_address_set(cap, next)));
         if (cheri_tag_get(candidate_cap)) {
           SCAN_LOG(2, "Recursing at %zx: %#lp\n", next, candidate_cap);
-          scan(candidate_cap, depth + 1);
+          try {
+            scan(candidate_cap, depth + 1);
+          } catch (int n) {
+            fprintf(stderr, " found at %lx while scanning capability %#p\n", next, cap);
+            throw(n + 1);
+          }
         } else {
           SCAN_LOG(2, "No cap at %zx.\n", next);
         }
@@ -230,6 +237,40 @@ bool LoadMap::try_combine(void* __capability cap) {
     return true;
   }
   return false;
+}
+
+bool PermissionMap::try_combine(void* __capability cap) {
+  if (!cheri_tag_get(cap) || cheri_is_sealed(cap)) return false;
+  if ((cheri_perms_get(cap) & perms_) != perms_) return false;  // match ALL perms
+
+  ranges_.combine(Range::from_cap(cap));
+  return true;
+}
+
+bool BranchMap::try_combine(void* __capability cap) {
+  if (!cheri_tag_get(cap) || (cheri_is_sealed(cap) && !cheri_is_sentry(cap))) return false;
+  if (!(cheri_perms_get(cap) & CHERI_PERM_EXECUTE)) return false;
+
+  // If it's a sentry, we treat it as length 1.
+  if (cheri_is_sentry(cap))
+    ranges_.combine(Range::from_base_length(cheri_address_get(cap), 1));
+  else
+    ranges_.combine(Range::from_cap(cap));
+  return true;
+}
+
+bool PoisonMap::try_combine(void* __capability cap) {
+  if (!cheri_tag_get(cap) || cheri_is_sealed(cap)) return false;
+  if (!(cheri_perms_get(cap) & perms_)) return false;  // match ANY perms
+  if (!poison_.overlaps(Range::from_cap(cap))) return false;
+
+  if (!callback_ || (*callback_)(cap)) {
+    fprintf(stderr, "capmap: detected access to poisoned memory via capability %#p\n", cap);
+    throw 0;
+  } else {
+    ranges_.combine(Range::from_cap(cap));
+    return true;
+  }
 }
 
 }  // namespace capmap

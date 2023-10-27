@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: Copyright 2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
+// SPDX-FileCopyrightText: Copyright 2023 The University of Glasgow
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 #include <stdarg.h>
@@ -285,4 +286,199 @@ TEST(scan_depth_zero) {
     mapper.print_json(stdout);
   }
   TRY(mapper.max_seen_scan_depth() == 0);
+}
+
+void* __capability cap_with_perms(size_t size, size_t perms) {
+  void* ptr = calloc(1, size);
+#ifdef __CHERI_PURE_CAPABILITY__
+  void* cap = ptr;
+#else
+  void* __capability cap = cheri_address_set(cheri_ddc_get(), (ptraddr_t)ptr);
+  cap = cheri_bounds_set_exact(cap, 8);
+#endif
+  return cheri_perms_and(cap, perms);
+}
+
+#include <sys/sysctl.h>
+
+TEST(scan_basic_map) {
+  const cheri_perms_t PERM_r = CHERI_PERM_LOAD, PERM_w = CHERI_PERM_STORE,
+                      PERM_rw = (cheri_perms_t)(PERM_r | PERM_w),
+                      PERM_rR = (cheri_perms_t)(CHERI_PERM_LOAD | CHERI_PERM_LOAD_CAP),
+                      PERM_wW = (cheri_perms_t)(CHERI_PERM_STORE | CHERI_PERM_STORE_CAP),
+                      PERM_rwRW = (cheri_perms_t)(PERM_rR | PERM_wW);
+
+  void* __capability caps[8] = {
+      cap_with_perms(sizeof(long), PERM_r),
+      cap_with_perms(sizeof(long), PERM_w),
+      cap_with_perms(sizeof(long), PERM_r | PERM_w),
+      cap_with_perms(sizeof(long), PERM_rR),
+      cap_with_perms(sizeof(long), PERM_wW),
+      cap_with_perms(sizeof(long), PERM_rR | PERM_wW),
+#ifdef __CHERI_PURE_CAPABILITY__
+      (void*)&cap_with_perms
+#else
+      cheri_sentry_create(cheri_address_set(cheri_pcc_get(), (ptraddr_t)(void*)&cap_with_perms))
+#endif
+      // open slot for sealcap
+  };
+  size_t sz = sizeof(caps[7]);
+  sysctlbyname("security.cheri.sealcap", &caps[7], &sz, NULL, 0);
+
+  Mapper mapper;
+  mapper.maps()->push_back(std::make_unique<capmap::PermissionMap>("store", "virtual memory", PERM_w));
+  mapper.maps()->push_back(
+      std::make_unique<capmap::PermissionMap>("store cap", "virtual memory", PERM_wW));
+  mapper.maps()->push_back(
+      std::make_unique<capmap::PermissionMap>("load/store", "virtual memory", PERM_rw));
+  mapper.maps()->push_back(
+      std::make_unique<capmap::PermissionMap>("load/store cap", "virtual memory", PERM_rwRW));
+  mapper.maps()->push_back(std::make_unique<capmap::PermissionMap>("seal", "otype", CHERI_PERM_SEAL));
+
+  mapper.scan(cap(&caps), "caps");
+
+  if (options().verbose()) {
+    mapper.print_json(stdout);
+  }
+  TRY(mapper.maps()->size() == 5);
+  auto w_map = dynamic_cast<capmap::PermissionMap const*>(mapper.maps()->at(0).get());
+  auto wW_map = dynamic_cast<capmap::PermissionMap const*>(mapper.maps()->at(1).get());
+  auto rw_map = dynamic_cast<capmap::PermissionMap const*>(mapper.maps()->at(2).get());
+  auto rwRW_map = dynamic_cast<capmap::PermissionMap const*>(mapper.maps()->at(3).get());
+  auto seal_map = dynamic_cast<capmap::PermissionMap const*>(mapper.maps()->at(4).get());
+
+  // construct expected outcomes for each memory map
+  SparseRange w_expect(Range::from_cap(caps[1]));
+  SparseRange wW_expect(Range::from_cap(caps[4]));
+  SparseRange rw_expect(Range::from_cap(caps[2]));
+  SparseRange rwRW_expect(Range::from_cap(caps[5]));
+  SparseRange seal_expect(Range::from_cap(caps[7]));
+  rwRW_expect.combine(Range::from_cap(cap(&caps)));
+  rw_expect.combine(rwRW_expect);
+  wW_expect.combine(rwRW_expect);
+  w_expect.combine(rw_expect);
+  w_expect.combine(wW_expect);
+
+  if (options().verbose()) {
+    fprintf(stdout, "w_expect : ");
+    w_expect.print_json(stdout, "\t");
+  }
+
+  TRY(w_map->ranges() == w_expect.parts());
+  TRY(wW_map->ranges() == wW_expect.parts());
+  TRY(rw_map->ranges() == rw_expect.parts());
+  TRY(rwRW_map->ranges() == rwRW_expect.parts());
+  TRY(seal_map->ranges() == seal_expect.parts());
+
+#ifdef __CHERI_PURE_CAPABILITY__
+  for (int i = 0; i < 6; i++) free(caps[i]);
+#else
+  for (int i = 0; i < 6; i++) free((void*)cheri_address_get(caps[i]));
+#endif
+}
+
+TEST(scan_branch_map) {
+  const cheri_perms_t PERM_r = CHERI_PERM_LOAD, PERM_w = CHERI_PERM_STORE,
+                      PERM_rw = (cheri_perms_t)(PERM_r | PERM_w),
+                      PERM_rR = (cheri_perms_t)(CHERI_PERM_LOAD | CHERI_PERM_LOAD_CAP),
+                      PERM_wW = (cheri_perms_t)(CHERI_PERM_STORE | CHERI_PERM_STORE_CAP);
+
+  void* __capability caps[8] = {
+      cap_with_perms(sizeof(long), PERM_r), cap_with_perms(sizeof(long), PERM_w),
+      cap_with_perms(sizeof(long), PERM_rw), cap_with_perms(sizeof(long), PERM_rR),
+      cap_with_perms(sizeof(long), PERM_wW),
+      cheri_perms_and(
+          cheri_pcc_get(),
+          CHERI_PERM_LOAD | CHERI_PERM_EXECUTE),  // XXX example of unsealed executable, but remove
+                                                  // LoadCap permissions to avoid searching further
+#ifdef __CHERI_PURE_CAPABILITY__
+      (void*)&cap_with_perms
+#else
+      cheri_sentry_create(cheri_address_set(cheri_pcc_get(), (ptraddr_t)(void*)&cap_with_perms))
+#endif
+      // open slot for sealcap
+  };
+  size_t sz = sizeof(caps[7]);
+  sysctlbyname("security.cheri.sealcap", &caps[7], &sz, NULL, 0);
+
+  Mapper mapper;
+  mapper.maps()->push_back(std::make_unique<capmap::BranchMap>());
+
+  mapper.scan(cap(&caps), "caps");
+
+  if (options().verbose()) {
+    mapper.print_json(stdout);
+  }
+  TRY(mapper.maps()->size() == 1);
+  auto branch_map = dynamic_cast<capmap::BranchMap const*>(mapper.maps()->at(0).get());
+
+  // construct expected outcomes for each memory map
+  SparseRange branch_expect(Range::from_base_length(cheri_address_get(caps[6]), 1));
+  branch_expect.combine(Range::from_cap(caps[5]));
+
+  if (options().verbose()) {
+    fprintf(stdout, "branch_expect : ");
+    branch_expect.print_json(stdout, "\t");
+  }
+
+  TRY(branch_map->ranges() == branch_expect.parts());
+
+#ifdef __CHERI_PURE_CAPABILITY__
+  for (int i = 0; i < 5; i++) free(caps[i]);
+#else
+  for (int i = 0; i < 5; i++) free((void*)cheri_address_get(caps[i]));
+#endif
+}
+
+static int pois_acc = 0;
+bool pois_cb(void* __capability cap) {
+  (void)cap;
+  pois_acc++;
+  return false;
+}
+
+TEST(scan_poison_map) {
+  typedef struct node {
+    struct node* __capability next;
+  } node_t;
+  node_t* __capability early;
+  node_t* __capability poison_node;
+  node_t* head = (node_t*)malloc(sizeof(node_t));
+
+  head->next = NULL;
+  for (int i = 1; i < 16; i++) {
+    node_t* add = (node_t*)malloc(sizeof(node_t));
+    add->next = cap<node_t>(head);
+    head = add;
+    if (i == 4) {
+      early = add->next;
+    } else if (i == 8) {
+      poison_node = add->next;
+    }
+  }
+
+  SparseRange poison(Range::from_cap(poison_node));
+  Mapper mapper;
+  mapper.maps()->push_back(std::make_unique<capmap::PoisonMap>(
+      "rwpoison", "virtual memory", (cheri_perms_t)(CHERI_PERM_LOAD | CHERI_PERM_STORE), poison,
+      &pois_cb));
+  pois_acc = 0;
+
+  // Scanning 'early' should not result in a poisoned access (since the list is singly-linked)
+  mapper.scan(early, "early");
+  TRY(!pois_acc);
+
+  // ... but scanning 'head' should
+  mapper.scan(cap(head), "head");
+  TRY(pois_acc);
+
+  while (head) {
+#ifdef __CHERI_PURE_CAPABILITY__
+    node_t* next = head->next;
+#else
+    node_t* next = (node_t*)cheri_address_get(head->next);
+#endif
+    free(head);
+    head = next;
+  }
 }
